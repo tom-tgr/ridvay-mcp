@@ -13,8 +13,16 @@ background, creates an unlisted share link, and hands back view/edit URLs.
 | Tool | What it does |
 |------|--------------|
 | `generate_poster` | Generate a design from a text brief (`prompt`, optional `size`, `use_brand`, `share`). Returns `/d/{id}` share link + Studio edit links. |
+| `create_poster` | **Self-drive mode:** save a design the *calling assistant* composed itself as design IR — Ridvay only stores/renders/shares it, no Ridvay-side AI (and no generation credits). |
+| `get_design_guide` | Returns the design-IR authoring spec (element types, backgrounds, fonts, worked example) that teaches the assistant to compose for `create_poster`. |
 | `refine_poster` | Natural-language edit of an existing design (`design_id`, `instruction`). |
 | `check_poster` | Report whether a design's AI images finished rendering (re-triggers the render if it was lost) and return its links. |
+
+Two modes, one server: `generate_poster` delegates creativity to Ridvay's generation
+pipeline; `create_poster` + `get_design_guide` let the client model (Claude, Copilot, …)
+be the designer and use Ridvay as a pure save/render/share backend. Client-authored
+designs may still include `prompt` image slots — Ridvay renders those server-side after
+creation.
 
 `size` accepts `1080x1080` (default), `1080x1920` / `story`, `1080x1350`, `1920x1080`,
 `a4`, `slide`, or any `WxH`.

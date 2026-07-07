@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { checkPoster, generatePoster, refinePoster, ToolContext } from "./tools.js";
+import { DESIGN_GUIDE } from "./guide.js";
+import { checkPoster, createPoster, generatePoster, refinePoster, ToolContext } from "./tools.js";
 
 export const SERVER_NAME = "ridvay";
 export const SERVER_VERSION = "0.1.0";
@@ -47,6 +48,49 @@ export function buildServer(ctx: ToolContext): McpServer {
       },
     },
     async (args) => runTool(() => generatePoster(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_design_guide",
+    {
+      title: "Get the Ridvay design-authoring guide",
+      description:
+        "Returns the Ridvay design IR format (JSON contract, element types, fonts, " +
+        "backgrounds, worked example) so YOU can compose a poster design yourself and " +
+        "save it with create_poster. Always call this before your first create_poster call.",
+      inputSchema: {},
+    },
+    async () => ({ content: [{ type: "text", text: DESIGN_GUIDE }] }),
+  );
+
+  server.registerTool(
+    "create_poster",
+    {
+      title: "Create a poster from your own design",
+      description:
+        "Save a poster design that YOU (the assistant) composed as Ridvay design IR — " +
+        "you control every element, color, and font; Ridvay only stores, renders, and " +
+        "shares it. No Ridvay-side AI generation is involved. Call get_design_guide " +
+        "first for the IR format. Use generate_poster instead when Ridvay's AI should " +
+        "do the designing. Returns view/share/edit links.",
+      inputSchema: {
+        design: z
+          .object({})
+          .passthrough()
+          .describe(
+            "The full design IR document (see get_design_guide): " +
+              '{ version, type: "design", title, pages: [{ width, height, background, elements }] }.',
+          ),
+        share: z
+          .boolean()
+          .optional()
+          .describe(
+            "Create an unlisted public share link (/d/…). Default true; set false to " +
+              "keep the design private to the account.",
+          ),
+      },
+    },
+    async (args) => runTool(() => createPoster(ctx, { design: args.design, share: args.share })),
   );
 
   server.registerTool(

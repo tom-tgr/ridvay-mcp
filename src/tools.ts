@@ -32,6 +32,11 @@ export interface CheckPosterArgs {
   design_id: string;
 }
 
+export interface CreatePosterArgs {
+  design: Record<string, unknown>;
+  share?: boolean;
+}
+
 export async function generatePoster(ctx: ToolContext, args: GeneratePosterArgs): Promise<string> {
   const res = await ctx.client.generateDesign({
     prompt: args.prompt,
@@ -41,6 +46,47 @@ export async function generatePoster(ctx: ToolContext, args: GeneratePosterArgs)
   });
   const shared = args.share === false ? false : await tryShare(ctx, res.designId);
   return describeDesignResult(ctx, res, { justGenerated: true, shared });
+}
+
+/**
+ * Self-drive mode: the calling assistant authored the IR itself; Ridvay only
+ * persists, renders, and shares it — no Ridvay-side AI generation (and no
+ * generation credits) involved.
+ */
+export async function createPoster(ctx: ToolContext, args: CreatePosterArgs): Promise<string> {
+  const ir = { version: "1.0", type: "design", ...args.design } as DesignIr;
+  const pages = ir.pages;
+  if (!Array.isArray(pages) || pages.length === 0 || !Array.isArray(pages[0]?.elements)) {
+    throw new Error(
+      'The design must have a "pages" array with at least one page containing an "elements" ' +
+        "array. Call get_design_guide for the exact IR format and a worked example.",
+    );
+  }
+
+  const res = await ctx.client.createDesign(ir);
+  if (res.status !== "success" || !res.id) {
+    throw new Error(`Ridvay could not save the design: ${res.error ?? `status "${res.status}"`}`);
+  }
+
+  const savedIr = res.ir ?? ir;
+  const pending = countPendingImages(savedIr);
+  if (pending > 0) {
+    void ctx.client.resolveImages(res.id).catch(() => {});
+  }
+
+  const shared = args.share === false ? false : await tryShare(ctx, res.id);
+  const title = savedIr.title ?? "Untitled design";
+  const lines = [
+    `Poster created from your design: "${title}" ✅`,
+    `Design ID: ${res.id}`,
+    ...linkLines(ctx, res.id, shared),
+  ];
+  if (pending > 0) {
+    lines.push(
+      `⏳ ${pending} image prompt(s) are rendering server-side (~1 min); links work now. Use check_poster to confirm completion.`,
+    );
+  }
+  return lines.join("\n");
 }
 
 export async function refinePoster(ctx: ToolContext, args: RefinePosterArgs): Promise<string> {

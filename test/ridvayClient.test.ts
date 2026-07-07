@@ -87,6 +87,20 @@ describe("RidvayClient", () => {
     await expect(client.getDesign("d1")).rejects.toBeInstanceOf(RidvayApiError);
   });
 
+  it("POSTs client-authored IR to the create endpoint", async () => {
+    const fetchFn = mockFetch(200, { status: "success", id: "d9" });
+    const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });
+
+    const ir = { version: "1.0", type: "design", title: "T", pages: [] };
+    const res = await client.createDesign(ir);
+
+    expect(res.id).toBe("d9");
+    const { url, init } = lastCall(fetchFn);
+    expect(url).toBe("https://a.com/v1/Designs/");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string).ir).toEqual(ir);
+  });
+
   it("POSTs share with the public flag", async () => {
     const fetchFn = mockFetch(200, { status: "success", isPublic: true });
     const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });

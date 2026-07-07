@@ -34,6 +34,13 @@ export interface GenerateDesignResponse {
   usage?: DesignUsage;
 }
 
+export interface CreateDesignResponse {
+  status: string;
+  error?: string;
+  id?: string;
+  ir?: DesignIr;
+}
+
 export interface DesignIr {
   version?: string;
   type?: string;
@@ -125,6 +132,17 @@ export class RidvayClient {
       "GET",
       `/v1/Designs/${encodeURIComponent(designId)}`,
     );
+  }
+
+  /**
+   * Persists a client-authored IR as a NEW design (no Ridvay-side AI involved).
+   * Server responds with the canonical saved IR and the new design id.
+   */
+  async createDesign(ir: DesignIr, previewImage?: string): Promise<CreateDesignResponse> {
+    return this.request<CreateDesignResponse>("POST", "/v1/Designs/", {
+      ir,
+      previewImage,
+    });
   }
 
   /** Toggles the unlisted public share link (`/d/{id}`) for a design. */

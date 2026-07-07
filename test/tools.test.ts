@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { checkPoster, generatePoster, refinePoster, ToolContext } from "../src/tools.js";
+import { checkPoster, createPoster, generatePoster, refinePoster, ToolContext } from "../src/tools.js";
+import { DESIGN_GUIDE } from "../src/guide.js";
 import type { RidvayClient } from "../src/ridvayClient.js";
 
 function makeCtx(overrides: Partial<Record<keyof RidvayClient, unknown>>): ToolContext {
@@ -9,6 +10,7 @@ function makeCtx(overrides: Partial<Record<keyof RidvayClient, unknown>>): ToolC
     refineDesign: vi.fn(),
     getDesign: vi.fn(),
     shareDesign: vi.fn(async () => ({ status: "success", isPublic: true })),
+    createDesign: vi.fn(async () => ({ status: "success", id: "made1" })),
     ...overrides,
   } as unknown as RidvayClient;
   return { client };
@@ -136,6 +138,93 @@ describe("generatePoster", () => {
     const text = await generatePoster(ctx, { prompt: "p" });
 
     expect(text).toContain("https://staging.ridvay.com/d/d");
+  });
+});
+
+describe("createPoster", () => {
+  const AUTHORED_DESIGN = {
+    title: "Hand Made",
+    pages: [
+      {
+        width: 1080,
+        height: 1350,
+        background: { type: "solid", color: "#111111" },
+        elements: [{ id: "h", type: "text", x: 0, y: 0, width: 100, height: 50, lines: [] }],
+      },
+    ],
+  };
+
+  it("saves the authored IR, shares it, and returns links", async () => {
+    const createDesign = vi.fn(async () => ({
+      status: "success",
+      id: "made1",
+      ir: { ...AUTHORED_DESIGN, version: "1.0", type: "design" },
+    }));
+    const ctx = makeCtx({ createDesign });
+
+    const text = await createPoster(ctx, { design: AUTHORED_DESIGN });
+
+    expect(createDesign).toHaveBeenCalledWith(
+      expect.objectContaining({ version: "1.0", type: "design", title: "Hand Made" }),
+    );
+    expect(text).toContain('"Hand Made"');
+    expect(text).toContain("https://ridvay.com/d/made1");
+    expect(ctx.client.shareDesign).toHaveBeenCalledWith("made1", true);
+    expect(ctx.client.resolveImages).not.toHaveBeenCalled();
+  });
+
+  it("fires the image-resolve pass when the authored IR contains image prompts", async () => {
+    const withPrompt = {
+      ...AUTHORED_DESIGN,
+      pages: [
+        {
+          ...AUTHORED_DESIGN.pages[0],
+          background: { type: "image", prompt: "moody espresso bar" },
+        },
+      ],
+    };
+    const ctx = makeCtx({
+      createDesign: vi.fn(async () => ({ status: "success", id: "made1", ir: withPrompt })),
+    });
+
+    const text = await createPoster(ctx, { design: withPrompt });
+
+    expect(ctx.client.resolveImages).toHaveBeenCalledWith("made1");
+    expect(text).toContain("rendering server-side");
+  });
+
+  it("rejects structurally invalid designs with a pointer to the guide", async () => {
+    const ctx = makeCtx({});
+
+    await expect(createPoster(ctx, { design: { title: "no pages" } })).rejects.toThrow(
+      /get_design_guide/,
+    );
+    expect(ctx.client.createDesign).not.toHaveBeenCalled();
+  });
+
+  it("keeps the design private when share is false", async () => {
+    const ctx = makeCtx({});
+
+    const text = await createPoster(ctx, { design: AUTHORED_DESIGN, share: false });
+
+    expect(ctx.client.shareDesign).not.toHaveBeenCalled();
+    expect(text).not.toContain("/d/made1");
+    expect(text).toContain("private");
+  });
+});
+
+describe("DESIGN_GUIDE", () => {
+  it("documents the core IR contract", () => {
+    for (const landmark of [
+      '"pages"',
+      '"type": "gradient"',
+      '"stops"',
+      "fontFamily",
+      "canonicalKey",
+      "create_poster",
+    ]) {
+      expect(DESIGN_GUIDE).toContain(landmark);
+    }
   });
 });
 
