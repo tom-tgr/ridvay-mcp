@@ -17,16 +17,29 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "modelcontextprotocol",
     "ridvay",
     "poster",
-    "design"
+    "design",
+    "claude",
+    "copilot"
   ],
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "author": "Ridvay",
+  "homepage": "https://ridvay.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tom-tgr/ridvay-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tom-tgr/ridvay-mcp/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^3.25.0"

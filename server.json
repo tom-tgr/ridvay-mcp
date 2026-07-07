@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.tom-tgr/ridvay-mcp",
+  "description": "Create and edit Ridvay Studio posters, flyers, and social designs from any MCP client — AI-generated or composed by the calling assistant itself.",
+  "repository": {
+    "url": "https://github.com/tom-tgr/ridvay-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "ridvay-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "RIDVAY_API_KEY",
+          "description": "Ridvay API key (create one from your account at ridvay.com)",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
