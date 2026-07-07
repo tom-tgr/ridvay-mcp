@@ -1,0 +1,39 @@
+{
+  "name": "ridvay-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that lets AI assistants (Claude, GitHub Copilot, Cursor) generate Ridvay Studio posters and designs",
+  "type": "module",
+  "bin": {
+    "ridvay-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "ridvay",
+    "poster",
+    "design"
+  ],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
