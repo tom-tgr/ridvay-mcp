@@ -28,8 +28,8 @@ Ridvay as a pure save/render/share backend. Client-authored designs may still in
 
 ## Get an API key
 
-Sign in at [ridvay.com](https://ridvay.com) and create an API key from your account's
-**API keys** page. Designs generated through MCP appear in your own *My designs*.
+Sign in and create a key at **[ridvay.com/user/api-keys](https://ridvay.com/user/api-keys)**.
+Designs generated through MCP appear in your own *My designs*.
 
 ## Quickstart
 
