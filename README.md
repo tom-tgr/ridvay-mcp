@@ -12,16 +12,15 @@ edit it in the Studio editor.
 
 | Tool | What it does |
 |------|--------------|
-| `generate_poster` | Ridvay's AI designs from your text brief (`prompt`, optional `size`, `use_brand`, `share`). |
-| `create_poster` | **Self-drive mode:** the *calling assistant* composes the design itself as Ridvay design IR — Ridvay only stores, renders, and shares it. No Ridvay-side AI generation. |
-| `get_design_guide` | Returns the design-IR authoring spec (element types, backgrounds, fonts, worked example) that teaches the assistant to compose for `create_poster`. |
+| `get_design_guide` | **Start here** — the design-IR authoring spec (element types, backgrounds, fonts, worked example) that teaches your assistant to compose designs itself. |
+| `create_poster` | **The preferred path:** your assistant composes the design as Ridvay design IR — Ridvay only stores, renders, and shares it. Fast, free, full creative control. |
+| `generate_poster` | Fallback: Ridvay's AI designs from a text brief (slower, consumes the account's generation credits). |
 | `refine_poster` | Natural-language edit of an existing design (`design_id`, `instruction`). |
 | `check_poster` | Report whether a design's AI images finished rendering and return its links. |
 
-Two modes, one server: `generate_poster` delegates creativity to Ridvay's generation
-pipeline; `create_poster` + `get_design_guide` make your AI client the designer and use
-Ridvay as a pure save/render/share backend. Client-authored designs may still include
-`prompt` image slots — Ridvay renders those server-side after creation.
+Your AI client is the designer; Ridvay is the save/render/share backend. Client-authored
+designs may still include `prompt` image slots — Ridvay renders those server-side after
+creation. `generate_poster` remains for when the assistant can't compose the design itself.
 
 `size` accepts `1080x1080` (default), `1080x1920` / `story`, `1080x1350`, `1920x1080`,
 `a4`, `slide`, or any `WxH`.

@@ -10,14 +10,59 @@ export function buildServer(ctx: ToolContext): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
 
   server.registerTool(
+    "get_design_guide",
+    {
+      title: "Get the Ridvay design-authoring guide",
+      description:
+        "START HERE for posters: returns the Ridvay design IR format (JSON contract, " +
+        "element types, fonts, backgrounds, worked example) so YOU can compose the design " +
+        "yourself and save it with create_poster — the fast, free, full-control path. " +
+        "Call once before your first create_poster.",
+      inputSchema: {},
+    },
+    async () => ({ content: [{ type: "text", text: DESIGN_GUIDE }] }),
+  );
+
+  server.registerTool(
+    "create_poster",
+    {
+      title: "Create a poster from your own design (preferred)",
+      description:
+        "PREFERRED way to make a poster/flyer/social post: YOU (the assistant) compose " +
+        "the design as Ridvay design IR — every element, color, and font is your call; " +
+        "Ridvay only stores, renders, and shares it. Fast and free (no AI generation " +
+        "credits). Call get_design_guide once for the IR format, then submit here. " +
+        "Returns view/share/edit links. Fall back to generate_poster only if you cannot " +
+        "compose the design yourself.",
+      inputSchema: {
+        design: z
+          .object({})
+          .passthrough()
+          .describe(
+            "The full design IR document (see get_design_guide): " +
+              '{ version, type: "design", title, pages: [{ width, height, background, elements }] }.',
+          ),
+        share: z
+          .boolean()
+          .optional()
+          .describe(
+            "Create an unlisted public share link (/d/…). Default true; set false to " +
+              "keep the design private to the account.",
+          ),
+      },
+    },
+    async (args) => runTool(() => createPoster(ctx, { design: args.design, share: args.share })),
+  );
+
+  server.registerTool(
     "generate_poster",
     {
-      title: "Generate a poster with Ridvay Studio",
+      title: "Generate a poster with Ridvay's AI (fallback)",
       description:
-        "Generate a poster, flyer, social-media post, story, banner, or any graphic design " +
-        "from a text brief using Ridvay Studio's AI design engine. Returns links to view, " +
-        "share, and edit the design. Describe the content, occasion, style, and any text " +
-        "that must appear. Typical run time is 20–40 seconds.",
+        "FALLBACK: have Ridvay's own AI design a poster from a text brief. Slower (20–40s) " +
+        "and consumes the account's generation credits. PREFER designing it yourself with " +
+        "get_design_guide + create_poster — that path is faster, free, and gives you full " +
+        "creative control. Use this only when you cannot compose the design yourself.",
       inputSchema: {
         prompt: z
           .string()
@@ -51,56 +96,13 @@ export function buildServer(ctx: ToolContext): McpServer {
   );
 
   server.registerTool(
-    "get_design_guide",
-    {
-      title: "Get the Ridvay design-authoring guide",
-      description:
-        "Returns the Ridvay design IR format (JSON contract, element types, fonts, " +
-        "backgrounds, worked example) so YOU can compose a poster design yourself and " +
-        "save it with create_poster. Always call this before your first create_poster call.",
-      inputSchema: {},
-    },
-    async () => ({ content: [{ type: "text", text: DESIGN_GUIDE }] }),
-  );
-
-  server.registerTool(
-    "create_poster",
-    {
-      title: "Create a poster from your own design",
-      description:
-        "Save a poster design that YOU (the assistant) composed as Ridvay design IR — " +
-        "you control every element, color, and font; Ridvay only stores, renders, and " +
-        "shares it. No Ridvay-side AI generation is involved. Call get_design_guide " +
-        "first for the IR format. Use generate_poster instead when Ridvay's AI should " +
-        "do the designing. Returns view/share/edit links.",
-      inputSchema: {
-        design: z
-          .object({})
-          .passthrough()
-          .describe(
-            "The full design IR document (see get_design_guide): " +
-              '{ version, type: "design", title, pages: [{ width, height, background, elements }] }.',
-          ),
-        share: z
-          .boolean()
-          .optional()
-          .describe(
-            "Create an unlisted public share link (/d/…). Default true; set false to " +
-              "keep the design private to the account.",
-          ),
-      },
-    },
-    async (args) => runTool(() => createPoster(ctx, { design: args.design, share: args.share })),
-  );
-
-  server.registerTool(
     "refine_poster",
     {
       title: "Refine an existing poster",
       description:
         "Edit a previously generated Ridvay design with a natural-language instruction " +
         '(e.g. "make the headline red", "add our opening hours", "swap to a dark theme"). ' +
-        "Requires the design ID returned by generate_poster.",
+        "Requires the design ID returned by create_poster or generate_poster.",
       inputSchema: {
         design_id: z.string().min(1).describe("The design ID returned by generate_poster."),
         instruction: z.string().min(1).describe("What to change, in plain language."),
