@@ -2,7 +2,10 @@
  * Thin HTTP client for the Ridvay API (api.ridvay.com).
  * Auth: opaque API key sent as `Authorization: Bearer <key>`.
  * Optional delegation: `X-Sub-User-Id` (honored only for admin/platform keys).
+ * Attribution: `X-Ridvay-Client` (MCP clientInfo) on every request, and
+ * `X-Ridvay-Agent-Model` on design-producing calls (see telemetry.ts).
  */
+import { AGENT_MODEL_HEADER, CLIENT_HEADER, sanitizeHeaderValue } from "./telemetry.js";
 
 export interface RidvayClientOptions {
   baseUrl: string;
@@ -11,6 +14,11 @@ export interface RidvayClientOptions {
   /** Per-request timeout in ms. Deferred generates typically return in ~25s. */
   timeoutMs?: number;
   fetchFn?: typeof fetch;
+  /**
+   * Lazily resolves the calling MCP client's identity ("claude-code/2.1.0")
+   * per request — clientInfo only exists after the initialize handshake.
+   */
+  clientInfoProvider?: () => string | undefined;
 }
 
 export interface GenerateDesignParams {
@@ -18,6 +26,8 @@ export interface GenerateDesignParams {
   size?: string;
   useBrand?: boolean;
   deferImages?: boolean;
+  /** Model id of the agent making the call, forwarded for quality attribution. */
+  agentModel?: string;
 }
 
 export interface DesignUsage {
@@ -91,6 +101,7 @@ export class RidvayClient {
   private readonly subUserId?: string;
   private readonly timeoutMs: number;
   private readonly fetchFn: typeof fetch;
+  private clientInfoProvider?: () => string | undefined;
 
   constructor(options: RidvayClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
@@ -98,15 +109,26 @@ export class RidvayClient {
     this.subUserId = options.subUserId;
     this.timeoutMs = options.timeoutMs ?? 180_000;
     this.fetchFn = options.fetchFn ?? fetch;
+    this.clientInfoProvider = options.clientInfoProvider;
+  }
+
+  /** Late binding for telemetry: the MCP server is built after this client. */
+  setClientInfoProvider(provider: () => string | undefined): void {
+    this.clientInfoProvider = provider;
   }
 
   async generateDesign(params: GenerateDesignParams): Promise<GenerateDesignResponse> {
-    return this.request<GenerateDesignResponse>("POST", "/v1/Designs/generate", {
-      prompt: params.prompt,
-      size: params.size,
-      useBrand: params.useBrand ?? false,
-      deferImages: params.deferImages ?? true,
-    });
+    return this.request<GenerateDesignResponse>(
+      "POST",
+      "/v1/Designs/generate",
+      {
+        prompt: params.prompt,
+        size: params.size,
+        useBrand: params.useBrand ?? false,
+        deferImages: params.deferImages ?? true,
+      },
+      { agentModel: params.agentModel },
+    );
   }
 
   async resolveImages(designId: string): Promise<GenerateDesignResponse> {
@@ -118,12 +140,13 @@ export class RidvayClient {
 
   async refineDesign(
     designId: string,
-    params: { prompt: string; useBrand?: boolean },
+    params: { prompt: string; useBrand?: boolean; agentModel?: string },
   ): Promise<GenerateDesignResponse> {
     return this.request<GenerateDesignResponse>(
       "POST",
       `/v1/Designs/${encodeURIComponent(designId)}/refine`,
       { prompt: params.prompt, useBrand: params.useBrand ?? false },
+      { agentModel: params.agentModel },
     );
   }
 
@@ -138,11 +161,17 @@ export class RidvayClient {
    * Persists a client-authored IR as a NEW design (no Ridvay-side AI involved).
    * Server responds with the canonical saved IR and the new design id.
    */
-  async createDesign(ir: DesignIr, previewImage?: string): Promise<CreateDesignResponse> {
-    return this.request<CreateDesignResponse>("POST", "/v1/Designs/", {
-      ir,
-      previewImage,
-    });
+  async createDesign(
+    ir: DesignIr,
+    previewImage?: string,
+    opts: { agentModel?: string } = {},
+  ): Promise<CreateDesignResponse> {
+    return this.request<CreateDesignResponse>(
+      "POST",
+      "/v1/Designs/",
+      { ir, previewImage },
+      { agentModel: opts.agentModel },
+    );
   }
 
   /** Toggles the unlisted public share link (`/d/{id}`) for a design. */
@@ -198,12 +227,21 @@ export class RidvayClient {
     });
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    opts: { agentModel?: string } = {},
+  ): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
     };
     if (this.subUserId) headers["X-Sub-User-Id"] = this.subUserId;
     if (body !== undefined) headers["Content-Type"] = "application/json";
+    const clientInfo = sanitizeHeaderValue(this.clientInfoProvider?.());
+    if (clientInfo) headers[CLIENT_HEADER] = clientInfo;
+    const agentModel = sanitizeHeaderValue(opts.agentModel);
+    if (agentModel) headers[AGENT_MODEL_HEADER] = agentModel;
 
     const res = await this.fetchFn(`${this.baseUrl}${path}`, {
       method,

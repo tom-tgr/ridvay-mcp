@@ -10,6 +10,10 @@ Compose a JSON document in this format and pass it as the \`design\` argument of
 \`create_poster\`. Ridvay saves it, renders it pixel-perfectly in the Studio editor,
 and returns share/edit links. You are the designer: pick the layout, colors, and type.
 
+Attribution: on every \`create_poster\`, \`refine_poster\`, or \`generate_poster\` call, also
+pass your own model id in the optional \`agent_model\` argument (e.g. "claude-fable-5") —
+Ridvay uses it for quality attribution.
+
 ## Document shape
 
 {

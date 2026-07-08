@@ -112,6 +112,91 @@ describe("RidvayClient", () => {
     expect(JSON.parse(init.body as string)).toEqual({ public: true });
   });
 
+  it("sends X-Ridvay-Agent-Model on generate when an agent model is given", async () => {
+    const fetchFn = mockFetch(200, { status: "success", designId: "d1" });
+    const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });
+
+    await client.generateDesign({ prompt: "p", agentModel: "claude-fable-5" });
+
+    const { init } = lastCall(fetchFn);
+    expect((init.headers as Record<string, string>)["X-Ridvay-Agent-Model"]).toBe("claude-fable-5");
+  });
+
+  it("sends X-Ridvay-Agent-Model on refine and create", async () => {
+    const fetchFn = mockFetch(200, { status: "success", id: "d1", designId: "d1" });
+    const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });
+
+    await client.refineDesign("d1", { prompt: "p", agentModel: "gpt-6" });
+    await client.createDesign({ pages: [] }, undefined, { agentModel: "gemini-3-pro" });
+
+    const mock = fetchFn as unknown as ReturnType<typeof vi.fn>;
+    const refineHeaders = (mock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    const createHeaders = (mock.mock.calls[1][1] as RequestInit).headers as Record<string, string>;
+    expect(refineHeaders["X-Ridvay-Agent-Model"]).toBe("gpt-6");
+    expect(createHeaders["X-Ridvay-Agent-Model"]).toBe("gemini-3-pro");
+  });
+
+  it("omits X-Ridvay-Agent-Model when no agent model is given", async () => {
+    const fetchFn = mockFetch(200, { status: "success", designId: "d1" });
+    const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });
+
+    await client.generateDesign({ prompt: "p" });
+
+    const { init } = lastCall(fetchFn);
+    expect((init.headers as Record<string, string>)["X-Ridvay-Agent-Model"]).toBeUndefined();
+  });
+
+  it("sanitizes header-hostile agent model values instead of crashing fetch", async () => {
+    const fetchFn = mockFetch(200, { status: "success", designId: "d1" });
+    const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });
+
+    await client.generateDesign({ prompt: "p", agentModel: "evil\r\nX-Other: 1" });
+
+    const { init } = lastCall(fetchFn);
+    expect((init.headers as Record<string, string>)["X-Ridvay-Agent-Model"]).toBe("evil X-Other: 1");
+  });
+
+  it("sends X-Ridvay-Client on every request when the provider knows the client", async () => {
+    const fetchFn = mockFetch(200, { id: "d1" });
+    const client = new RidvayClient({
+      baseUrl: "https://a.com",
+      apiKey: "k",
+      fetchFn,
+      clientInfoProvider: () => "claude-code/2.1.0",
+    });
+
+    await client.getDesign("d1");
+
+    const { init } = lastCall(fetchFn);
+    expect((init.headers as Record<string, string>)["X-Ridvay-Client"]).toBe("claude-code/2.1.0");
+  });
+
+  it("omits X-Ridvay-Client when the provider is missing or returns nothing", async () => {
+    const bare = mockFetch(200, { id: "d1" });
+    await new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn: bare }).getDesign("d1");
+    expect((lastCall(bare).init.headers as Record<string, string>)["X-Ridvay-Client"]).toBeUndefined();
+
+    const empty = mockFetch(200, { id: "d1" });
+    await new RidvayClient({
+      baseUrl: "https://a.com",
+      apiKey: "k",
+      fetchFn: empty,
+      clientInfoProvider: () => undefined,
+    }).getDesign("d1");
+    expect((lastCall(empty).init.headers as Record<string, string>)["X-Ridvay-Client"]).toBeUndefined();
+  });
+
+  it("honors a provider set after construction (setClientInfoProvider)", async () => {
+    const fetchFn = mockFetch(200, { id: "d1" });
+    const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });
+
+    client.setClientInfoProvider(() => "cursor/1.3.0");
+    await client.getDesign("d1");
+
+    const { init } = lastCall(fetchFn);
+    expect((init.headers as Record<string, string>)["X-Ridvay-Client"]).toBe("cursor/1.3.0");
+  });
+
   it("GETs designs without a request body", async () => {
     const fetchFn = mockFetch(200, { id: "d1" });
     const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });

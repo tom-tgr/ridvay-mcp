@@ -20,12 +20,15 @@ export interface GeneratePosterArgs {
   size?: string;
   use_brand?: boolean;
   share?: boolean;
+  /** Model id of the calling agent (e.g. "claude-fable-5"), for attribution. */
+  agent_model?: string;
 }
 
 export interface RefinePosterArgs {
   design_id: string;
   instruction: string;
   use_brand?: boolean;
+  agent_model?: string;
 }
 
 export interface CheckPosterArgs {
@@ -35,6 +38,7 @@ export interface CheckPosterArgs {
 export interface CreatePosterArgs {
   design: Record<string, unknown>;
   share?: boolean;
+  agent_model?: string;
 }
 
 export async function generatePoster(ctx: ToolContext, args: GeneratePosterArgs): Promise<string> {
@@ -43,6 +47,7 @@ export async function generatePoster(ctx: ToolContext, args: GeneratePosterArgs)
     size: args.size,
     useBrand: args.use_brand,
     deferImages: true,
+    agentModel: args.agent_model,
   });
   const shared = args.share === false ? false : await tryShare(ctx, res.designId);
   return describeDesignResult(ctx, res, { justGenerated: true, shared });
@@ -63,7 +68,7 @@ export async function createPoster(ctx: ToolContext, args: CreatePosterArgs): Pr
     );
   }
 
-  const res = await ctx.client.createDesign(ir);
+  const res = await ctx.client.createDesign(ir, undefined, { agentModel: args.agent_model });
   if (res.status !== "success" || !res.id) {
     throw new Error(`Ridvay could not save the design: ${res.error ?? `status "${res.status}"`}`);
   }
@@ -93,6 +98,7 @@ export async function refinePoster(ctx: ToolContext, args: RefinePosterArgs): Pr
   const res = await ctx.client.refineDesign(args.design_id, {
     prompt: args.instruction,
     useBrand: args.use_brand,
+    agentModel: args.agent_model,
   });
   return describeDesignResult(ctx, res, { justGenerated: false, shared: undefined });
 }

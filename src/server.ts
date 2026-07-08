@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { DESIGN_GUIDE } from "./guide.js";
+import { attachClientTelemetry } from "./telemetry.js";
 import {
   animatePoster,
   checkPoster,
@@ -13,10 +14,20 @@ import {
 } from "./tools.js";
 
 export const SERVER_NAME = "ridvay";
-export const SERVER_VERSION = "0.2.0";
+export const SERVER_VERSION = "0.2.1";
+
+const AGENT_MODEL_SCHEMA = z
+  .string()
+  .optional()
+  .describe(
+    'The model id of the agent making this call (e.g. "claude-fable-5"). ' +
+      "Used for quality attribution.",
+  );
 
 export function buildServer(ctx: ToolContext): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+  // Forward the connected MCP client's identity on every Ridvay API request.
+  attachClientTelemetry(server, ctx.client);
 
   server.registerTool(
     "get_design_guide",
@@ -58,9 +69,13 @@ export function buildServer(ctx: ToolContext): McpServer {
             "Create an unlisted public share link (/d/…). Default true; set false to " +
               "keep the design private to the account.",
           ),
+        agent_model: AGENT_MODEL_SCHEMA,
       },
     },
-    async (args) => runTool(() => createPoster(ctx, { design: args.design, share: args.share })),
+    async (args) =>
+      runTool(() =>
+        createPoster(ctx, { design: args.design, share: args.share, agent_model: args.agent_model }),
+      ),
   );
 
   server.registerTool(
@@ -99,6 +114,7 @@ export function buildServer(ctx: ToolContext): McpServer {
             "Create an unlisted public share link (/d/…) for the poster. Default true; " +
               "set false to keep the design private to the account.",
           ),
+        agent_model: AGENT_MODEL_SCHEMA,
       },
     },
     async (args) => runTool(() => generatePoster(ctx, args)),
@@ -119,6 +135,7 @@ export function buildServer(ctx: ToolContext): McpServer {
           .boolean()
           .optional()
           .describe("Re-apply the account's Brand Kit while editing. Default false."),
+        agent_model: AGENT_MODEL_SCHEMA,
       },
     },
     async (args) => runTool(() => refinePoster(ctx, args)),

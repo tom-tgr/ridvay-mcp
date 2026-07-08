@@ -139,6 +139,21 @@ describe("generatePoster", () => {
     });
   });
 
+  it("forwards agent_model to the client for attribution", async () => {
+    const generateDesign = vi.fn(async () => ({
+      status: "success",
+      designId: "d",
+      ir: IR_COMPLETE,
+    }));
+    const ctx = makeCtx({ generateDesign });
+
+    await generatePoster(ctx, { prompt: "p", agent_model: "claude-fable-5" });
+
+    expect(generateDesign).toHaveBeenCalledWith(
+      expect.objectContaining({ agentModel: "claude-fable-5" }),
+    );
+  });
+
   it("honors a custom web URL for links", async () => {
     const ctx = {
       ...makeCtx({
@@ -178,6 +193,8 @@ describe("createPoster", () => {
 
     expect(createDesign).toHaveBeenCalledWith(
       expect.objectContaining({ version: "1.0", type: "design", title: "Hand Made" }),
+      undefined,
+      { agentModel: undefined },
     );
     expect(text).toContain('"Hand Made"');
     expect(text).toContain("https://ridvay.com/d/made1");
@@ -223,6 +240,16 @@ describe("createPoster", () => {
     expect(text).not.toContain("/d/made1");
     expect(text).toContain("private");
   });
+
+  it("forwards agent_model to the client for attribution", async () => {
+    const ctx = makeCtx({});
+
+    await createPoster(ctx, { design: AUTHORED_DESIGN, agent_model: "claude-fable-5" });
+
+    expect(ctx.client.createDesign).toHaveBeenCalledWith(expect.anything(), undefined, {
+      agentModel: "claude-fable-5",
+    });
+  });
 });
 
 describe("DESIGN_GUIDE", () => {
@@ -237,6 +264,11 @@ describe("DESIGN_GUIDE", () => {
     ]) {
       expect(DESIGN_GUIDE).toContain(landmark);
     }
+  });
+
+  it("tells agents to pass their model id in agent_model", () => {
+    expect(DESIGN_GUIDE).toContain("agent_model");
+    expect(DESIGN_GUIDE).toContain("quality attribution");
   });
 });
 
@@ -257,6 +289,26 @@ describe("refinePoster", () => {
     );
     expect(text).toContain("Poster updated");
     expect(text).toContain("https://ridvay.com/d/abc123");
+  });
+
+  it("forwards agent_model to the client for attribution", async () => {
+    const refineDesign = vi.fn(async () => ({
+      status: "success",
+      designId: "abc123",
+      ir: IR_COMPLETE,
+    }));
+    const ctx = makeCtx({ refineDesign });
+
+    await refinePoster(ctx, {
+      design_id: "abc123",
+      instruction: "make it red",
+      agent_model: "claude-fable-5",
+    });
+
+    expect(refineDesign).toHaveBeenCalledWith(
+      "abc123",
+      expect.objectContaining({ agentModel: "claude-fable-5" }),
+    );
   });
 });
 

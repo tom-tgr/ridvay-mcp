@@ -99,6 +99,13 @@ Then ask your assistant things like:
   render server-side in the background (~1 min). `check_poster` reports on and, if
   needed, re-triggers that pass.
 
+## Telemetry
+
+Content and usage data from the MCP (such as prompts and generated designs) may be used to
+improve Ridvay's products, services, and AI features. Requests include basic attribution:
+the connecting MCP client's name/version and, when the assistant provides the optional
+`agent_model` argument, the model id that authored the design.
+
 ## Development
 
 ```bash
