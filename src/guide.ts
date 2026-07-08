@@ -75,6 +75,27 @@ One of three sources:
 ### type "icon"
 { ..., "type": "icon", "icon": "icon:star" } — small decorative catalog icon.
 
+## Motion (optional) — for animated posters / video
+
+Motion fields are optional; omit them for a static poster. To animate, add them to pages/elements,
+then the caller can render an MP4 with export_video (or call animate_poster to auto-add motion).
+
+- Page-level: "sceneDuration" (seconds the page holds, 0.5–60, default 5) and
+  "transition": { "preset": "fade" | "slide" | "dissolve" | "morph", "durationMs": 700 }.
+- Element-level: "motion": { "in": {...}, "out": {...}, "loop": {...} } where each step is
+  { "preset": ..., "durationMs": 600, "delayMs": 0 }.
+  - Entrance/exit presets: "fade" | "slide-up" | "slide-down" | "slide-left" | "slide-right" |
+    "pop" | "rise" | "zoom" | "wipe". Text-only: "typewriter" | "letters" | "bang".
+  - Loop presets (scene-long emphasis): "pulse" | "rainbow".
+- Multi-page morph is the signature look: give the SAME element "id" on consecutive pages and it
+  tweens position/size/color between them. Set "noMorph": true to opt an element out.
+- Stagger entrances with increasing delayMs (e.g. 0, 120, 240) so elements arrive in sequence.
+
+Example element with motion:
+{ "id": "headline", "type": "text", "x": 90, "y": 240, "width": 900, "height": 300, "z": 2,
+  "motion": { "in": { "preset": "typewriter", "durationMs": 900 } },
+  "lines": [ { "text": "Espresso", "fontSize": 130, "color": "#f7efe6" } ] }
+
 ## Design craft checklist
 
 - One dominant headline (90–140px on a 1080 canvas), clear hierarchy below it.

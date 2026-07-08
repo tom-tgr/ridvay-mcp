@@ -15,12 +15,12 @@ export function viewUrl(designId: string, opts?: Partial<LinkOptions>): string {
   return `${normalizeWebUrl(opts?.webUrl)}/d/${encodeURIComponent(designId)}`;
 }
 
-/** Opens the design in Ridvay Studio from the owner's account. */
+/**
+ * Opens the shared design in Ridvay Studio as an editable copy. Uses `?remix=`
+ * (the public endpoint) — NOT `?open=`, which is ownership-scoped and silently
+ * fails for a browser that isn't logged into the API-key's account (the norm for
+ * MCP). Requires the design to have been shared public first.
+ */
 export function editUrl(designId: string, opts?: Partial<LinkOptions>): string {
-  return `${normalizeWebUrl(opts?.webUrl)}/studio?open=${encodeURIComponent(designId)}`;
-}
-
-/** Lets anyone (not just the owner) open an editable copy in Ridvay Studio. */
-export function remixUrl(designId: string, opts?: Partial<LinkOptions>): string {
   return `${normalizeWebUrl(opts?.webUrl)}/studio?remix=${encodeURIComponent(designId)}`;
 }

@@ -17,10 +17,17 @@ edit it in the Studio editor.
 | `generate_poster` | Fallback: Ridvay's AI designs from a text brief (slower, consumes the account's generation credits). |
 | `refine_poster` | Natural-language edit of an existing design (`design_id`, `instruction`). |
 | `check_poster` | Report whether a design's AI images finished rendering and return its links. |
+| `export_poster` | Render a design to a downloadable **PNG/JPEG** at its native pixel size (`scale` 1–4, default 2). |
+| `animate_poster` | Add motion (entrance/exit, page transitions, morph) — blank for a tasteful default, or describe it. |
+| `export_video` | Render an animated design to a downloadable **H.264 MP4** (optional looped soundtrack). |
 
 Your AI client is the designer; Ridvay is the save/render/share backend. Client-authored
 designs may still include `prompt` image slots — Ridvay renders those server-side after
 creation. `generate_poster` remains for when the assistant can't compose the design itself.
+
+**Export & motion:** `export_poster` gives you the actual poster image at its real dimensions
+(e.g. a 1080×1350 PNG), not the share page. For animation, either include motion fields when
+you compose the design (see the guide) or call `animate_poster`, then `export_video` for an MP4.
 
 `size` accepts `1080x1080` (default), `1080x1920` / `story`, `1080x1350`, `1920x1080`,
 `a4`, `slide`, or any `WxH`.

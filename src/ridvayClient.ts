@@ -157,6 +157,47 @@ export class RidvayClient {
     );
   }
 
+  /** Rasterizes a saved design to a hosted PNG/JPEG at its native page size × scale. */
+  async renderImage(
+    designId: string,
+    params: { format?: "png" | "jpeg"; scale?: number; quality?: number; pageIndex?: number } = {},
+  ): Promise<{ imageUrl?: string; error?: string }> {
+    return this.request<{ imageUrl?: string; error?: string }>(
+      "POST",
+      `/v1/Designs/${encodeURIComponent(designId)}/render-image`,
+      {
+        format: params.format,
+        scale: params.scale,
+        quality: params.quality,
+        pageIndex: params.pageIndex,
+      },
+    );
+  }
+
+  /** Adds entrance/exit/morph motion to a design (blank description → tasteful default). */
+  async animateDesign(
+    designId: string,
+    params: { description?: string } = {},
+  ): Promise<GenerateDesignResponse> {
+    return this.request<GenerateDesignResponse>(
+      "POST",
+      `/v1/Designs/${encodeURIComponent(designId)}/animate`,
+      { description: params.description },
+    );
+  }
+
+  /** Renders an IR's animation timeline to a hosted H.264 MP4 (optional looped soundtrack). */
+  async renderVideo(
+    ir: DesignIr,
+    params: { fps?: number; audioUrl?: string } = {},
+  ): Promise<{ videoUrl?: string; error?: string }> {
+    return this.request<{ videoUrl?: string; error?: string }>("POST", "/v1/Designs/render-video", {
+      ir,
+      fps: params.fps,
+      audioUrl: params.audioUrl,
+    });
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,

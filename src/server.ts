@@ -1,10 +1,19 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { DESIGN_GUIDE } from "./guide.js";
-import { checkPoster, createPoster, generatePoster, refinePoster, ToolContext } from "./tools.js";
+import {
+  animatePoster,
+  checkPoster,
+  createPoster,
+  exportPoster,
+  exportVideo,
+  generatePoster,
+  refinePoster,
+  ToolContext,
+} from "./tools.js";
 
 export const SERVER_NAME = "ridvay";
-export const SERVER_VERSION = "0.1.0";
+export const SERVER_VERSION = "0.2.0";
 
 export function buildServer(ctx: ToolContext): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
@@ -128,6 +137,72 @@ export function buildServer(ctx: ToolContext): McpServer {
       },
     },
     async (args) => runTool(() => checkPoster(ctx, args)),
+  );
+
+  server.registerTool(
+    "export_poster",
+    {
+      title: "Export a poster as a PNG/JPEG image",
+      description:
+        "Render a saved design to a downloadable image file at its native pixel size. Use this to " +
+        "get the actual poster image (not the share page) — e.g. a 1080×1350 PNG. If the design has " +
+        "AI images still rendering, run check_poster first.",
+      inputSchema: {
+        design_id: z.string().min(1).describe("The design ID returned by create_poster/generate_poster."),
+        format: z
+          .enum(["png", "jpeg"])
+          .optional()
+          .describe('"png" (default, lossless, transparent-capable) or "jpeg" (smaller).'),
+        scale: z
+          .number()
+          .int()
+          .min(1)
+          .max(4)
+          .optional()
+          .describe("Pixel scale of the design's native size. 1 = exact size, 2 = crisp/retina (default), up to 4."),
+        quality: z.number().int().min(1).max(100).optional().describe("JPEG quality 1–100 (ignored for PNG)."),
+        page: z.number().int().min(0).optional().describe("Page index for multi-page designs (0-based, default 0)."),
+      },
+    },
+    async (args) => runTool(() => exportPoster(ctx, args)),
+  );
+
+  server.registerTool(
+    "animate_poster",
+    {
+      title: "Add animation / motion to a poster",
+      description:
+        "Turn a static design into an animated one — entrance/exit animations, per-page transitions, " +
+        "and morphing between pages. Leave the description blank for a tasteful default, or describe the " +
+        "motion you want. Then use export_video to render it to an MP4.",
+      inputSchema: {
+        design_id: z.string().min(1).describe("The design ID to animate."),
+        description: z
+          .string()
+          .optional()
+          .describe('Optional motion direction, e.g. "headline types on, logo pops, gentle fades". Blank → default.'),
+      },
+    },
+    async (args) => runTool(() => animatePoster(ctx, args)),
+  );
+
+  server.registerTool(
+    "export_video",
+    {
+      title: "Render an animated poster to MP4 video",
+      description:
+        "Render a design's animation timeline to a downloadable H.264 MP4. The design must have motion " +
+        "already (from animate_poster, or motion fields in create_poster). Optionally loop a soundtrack under it.",
+      inputSchema: {
+        design_id: z.string().min(1).describe("The design ID to render (must be animated)."),
+        fps: z.number().int().min(1).max(60).optional().describe("Frames per second (default 30, max 60)."),
+        audio_url: z
+          .string()
+          .optional()
+          .describe("Optional https URL of a soundtrack to loop under the clip (muxed as AAC)."),
+      },
+    },
+    async (args) => runTool(() => exportVideo(ctx, args)),
   );
 
   return server;

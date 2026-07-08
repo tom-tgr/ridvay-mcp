@@ -8,7 +8,7 @@ import {
   GenerateDesignResponse,
   RidvayClient,
 } from "./ridvayClient.js";
-import { editUrl, remixUrl, viewUrl } from "./links.js";
+import { editUrl, viewUrl } from "./links.js";
 
 export interface ToolContext {
   client: RidvayClient;
@@ -168,20 +168,95 @@ function describeDesignResult(
 }
 
 /**
- * shared === false → only the owner link is valid, so don't hand out /d/ URLs
- * that would redirect. undefined (unknown) keeps all links, which matches the
- * default generate flow where sharing is on.
+ * Both user-facing links go through the PUBLIC share (/d/ view, ?remix= edit),
+ * so they work for any recipient regardless of login. When the design isn't
+ * shared, neither public link resolves — say so plainly rather than hand out a
+ * URL that 404s (there is no reliable browser link to a private MCP design,
+ * since ?open= needs the viewer to be logged into the owning account).
  */
 function linkLines(ctx: ToolContext, designId: string, shared: boolean | undefined): string[] {
-  const edit = `Edit in Ridvay Studio: ${editUrl(designId, { webUrl: ctx.webUrl })}`;
   if (shared === false) {
-    return [edit, "(private — pass share: true when generating to get a shareable link)"];
+    return [
+      `Design ID ${designId} is private — not shared, so it has no public link.`,
+      "Pass share: true to get view/edit links anyone can open.",
+    ];
   }
   return [
-    `View / share: ${viewUrl(designId, { webUrl: ctx.webUrl })}`,
-    edit,
-    `Editable copy for others: ${remixUrl(designId, { webUrl: ctx.webUrl })}`,
+    `View & share: ${viewUrl(designId, { webUrl: ctx.webUrl })}`,
+    `Open in Ridvay Studio to edit: ${editUrl(designId, { webUrl: ctx.webUrl })}`,
   ];
+}
+
+export interface ExportPosterArgs {
+  design_id: string;
+  format?: "png" | "jpeg";
+  scale?: number;
+  quality?: number;
+  page?: number;
+}
+
+export async function exportPoster(ctx: ToolContext, args: ExportPosterArgs): Promise<string> {
+  const res = await ctx.client.renderImage(args.design_id, {
+    format: args.format,
+    scale: args.scale,
+    quality: args.quality,
+    pageIndex: args.page,
+  });
+  if (!res.imageUrl) {
+    throw new Error(
+      `Ridvay could not export the design: ${res.error ?? "no image URL returned"}. ` +
+        "If images are still rendering, run check_poster first.",
+    );
+  }
+  const fmt = (args.format ?? "png").toUpperCase();
+  const scale = args.scale ?? 2;
+  return [
+    `Exported "${args.design_id}" as ${fmt} (${scale}× the design's native size):`,
+    res.imageUrl,
+    "The image is at the design's own pixel dimensions × scale — download it directly.",
+  ].join("\n");
+}
+
+export interface AnimatePosterArgs {
+  design_id: string;
+  description?: string;
+}
+
+export async function animatePoster(ctx: ToolContext, args: AnimatePosterArgs): Promise<string> {
+  const res = await ctx.client.animateDesign(args.design_id, { description: args.description });
+  if (res.status !== "success" || !res.designId) {
+    throw new Error(`Ridvay could not animate the design: ${res.error ?? `status "${res.status}"`}`);
+  }
+  return [
+    `Motion added to "${res.ir?.title ?? args.design_id}" ✅`,
+    args.description
+      ? `Applied your motion direction: "${args.description}".`
+      : "Applied a tasteful default animation (staggered entrances, morphing between pages).",
+    `Preview it in Studio: ${editUrl(res.designId, { webUrl: ctx.webUrl })}`,
+    "Use export_video to render it to an MP4.",
+  ].join("\n");
+}
+
+export interface ExportVideoArgs {
+  design_id: string;
+  fps?: number;
+  audio_url?: string;
+}
+
+export async function exportVideo(ctx: ToolContext, args: ExportVideoArgs): Promise<string> {
+  // render-video takes raw IR (not an id), so fetch the saved design first.
+  const body = await ctx.client.getDesign(args.design_id);
+  const ir = extractIr(body);
+  if (!ir) throw new Error(`Could not load design "${args.design_id}" to render a video.`);
+
+  const res = await ctx.client.renderVideo(ir, { fps: args.fps, audioUrl: args.audio_url });
+  if (!res.videoUrl) {
+    throw new Error(
+      `Ridvay could not render the video: ${res.error ?? "no video URL returned"}. ` +
+        "The design needs motion first — run animate_poster (or include motion fields in the design).",
+    );
+  }
+  return [`Rendered "${args.design_id}" to an MP4 video:`, res.videoUrl].join("\n");
 }
 
 function extractIr(body: Record<string, unknown>): DesignIr | undefined {
