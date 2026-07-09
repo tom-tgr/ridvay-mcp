@@ -3,6 +3,7 @@
  * against a plain client. server.ts adapts them onto the MCP server.
  */
 import {
+  countFailedImages,
   countPendingImages,
   DesignIr,
   GenerateDesignResponse,
@@ -112,6 +113,7 @@ export async function checkPoster(ctx: ToolContext, args: CheckPosterArgs): Prom
   const body = await ctx.client.getDesign(args.design_id);
   const ir = extractIr(body);
   const pending = countPendingImages(ir);
+  const failed = countFailedImages(ir);
   const title = ir?.title ?? (body["title"] as string | undefined) ?? "Untitled design";
   const ogImage = extractOgImage(body);
   const shared = extractIsPublic(body);
@@ -127,8 +129,15 @@ export async function checkPoster(ctx: ToolContext, args: CheckPosterArgs): Prom
     pending > 0
       ? `⏳ ${pending} image(s) are still rendering server-side (render re-triggered). Check again in ~30–60 seconds.`
       : `✅ All images are rendered — the design is complete.`,
-    ...linkLines(ctx, args.design_id, shared),
   ];
+  if (failed > 0) {
+    // The server's loop-breaker gave up on these slots — be honest instead of claiming perfection.
+    lines.push(
+      `⚠️ ${failed} image(s) permanently failed to generate; the design uses fallbacks there. ` +
+        "Open it in Ridvay Studio to regenerate them, or refine_poster with a different image description.",
+    );
+  }
+  lines.push(...linkLines(ctx, args.design_id, shared));
   if (ogImage) lines.push(`Preview image: ${ogImage}`);
   return lines.join("\n");
 }

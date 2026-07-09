@@ -73,6 +73,8 @@ export interface DesignBackground {
   url?: string;
   src?: string;
   prompt?: string;
+  /** Set by the server's loop-breaker when generation permanently failed (prompt moved here). */
+  failedPrompt?: string;
   [key: string]: unknown;
 }
 
@@ -81,6 +83,8 @@ export interface DesignElement {
   type?: string;
   src?: string;
   prompt?: string;
+  /** Set by the server's loop-breaker when generation permanently failed (prompt moved here). */
+  failedPrompt?: string;
   canonicalKey?: string;
   vectorSvg?: string;
   [key: string]: unknown;
@@ -344,4 +348,22 @@ export function countPendingImages(ir: DesignIr | undefined): number {
     }
   }
   return pending;
+}
+
+/**
+ * Counts image slots whose generation PERMANENTLY failed: after enough failed resolve passes the
+ * server moves the slot's `prompt` to `failedPrompt` (the loop-breaker), so it no longer counts as
+ * pending — but pretending the design is flawless would be dishonest. Callers surface these.
+ */
+export function countFailedImages(ir: DesignIr | undefined): number {
+  if (!ir) return 0;
+  let failed = 0;
+  for (const page of ir.pages ?? []) {
+    const bg = page.background;
+    if (bg && bg.type === "image" && bg.failedPrompt && !bg.url && !bg.src) failed++;
+    for (const el of page.elements ?? []) {
+      if (el.type === "image" && el.failedPrompt && !el.src) failed++;
+    }
+  }
+  return failed;
 }

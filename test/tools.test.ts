@@ -348,6 +348,25 @@ describe("checkPoster", () => {
     expect(text).toContain("complete");
     expect(text).toContain("https://cdn.ridvay.com/og/abc.jpg");
   });
+
+  it("is honest about permanently-failed images (server loop-breaker) without re-triggering", async () => {
+    // After repeated failures the server moves prompt → failedPrompt: not pending, but not perfect.
+    const ctx = makeCtx({
+      getDesign: vi.fn(async () => ({
+        ir: {
+          title: "Sale",
+          pages: [{ background: { type: "image", failedPrompt: "a beach" }, elements: [] }],
+        },
+      })),
+    });
+
+    const text = await checkPoster(ctx, { design_id: "abc123" });
+
+    expect(text).toContain("✅"); // nothing pending — no infinite "still rendering"
+    expect(text).toContain("1 image(s) permanently failed");
+    expect(text).toContain("refine_poster");
+    expect(ctx.client.resolveImages).not.toHaveBeenCalled();
+  });
 });
 
 describe("exportPoster", () => {

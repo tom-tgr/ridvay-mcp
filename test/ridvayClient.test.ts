@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { countPendingImages, RidvayApiError, RidvayClient } from "../src/ridvayClient.js";
+import { countFailedImages, countPendingImages, RidvayApiError, RidvayClient } from "../src/ridvayClient.js";
 
 function mockFetch(status: number, body: unknown) {
   return vi.fn(async () => ({
@@ -283,5 +283,38 @@ describe("countPendingImages", () => {
     expect(countPendingImages(undefined)).toBe(0);
     expect(countPendingImages({})).toBe(0);
     expect(countPendingImages({ pages: [] })).toBe(0);
+  });
+
+  it("does not count a terminally-failed slot (failedPrompt, no prompt) as pending", () => {
+    // The server's loop-breaker moves prompt → failedPrompt after repeated failures.
+    const ir = {
+      pages: [
+        {
+          background: { type: "image", failedPrompt: "a beach" },
+          elements: [{ type: "image", failedPrompt: "a palm tree" }],
+        },
+      ],
+    };
+    expect(countPendingImages(ir)).toBe(0);
+    expect(countFailedImages(ir)).toBe(2);
+  });
+});
+
+describe("countFailedImages", () => {
+  it("ignores slots that eventually resolved despite earlier failures", () => {
+    const ir = {
+      pages: [
+        {
+          background: { type: "image", failedPrompt: "old", url: "https://cdn/bg.jpg" },
+          elements: [{ type: "image", failedPrompt: "old", src: "https://cdn/el.png" }],
+        },
+      ],
+    };
+    expect(countFailedImages(ir)).toBe(0);
+  });
+
+  it("returns 0 for missing or clean IR", () => {
+    expect(countFailedImages(undefined)).toBe(0);
+    expect(countFailedImages({ pages: [{ background: { type: "solid" }, elements: [] }] })).toBe(0);
   });
 });
