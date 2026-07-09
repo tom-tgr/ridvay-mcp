@@ -1,3 +1,6 @@
+<!-- Banner designed & rendered by this very MCP server (create_poster → export_poster). -->
+![Ridvay MCP — design tools for AI agents](https://storage.googleapis.com/ridvay.appspot.com/public/system/0de9ade1-056d-447a-80b9-d89edcaad700.png)
+
 # ridvay-mcp
 
 MCP (Model Context Protocol) server that lets AI assistants — Claude Code, Claude Desktop,
