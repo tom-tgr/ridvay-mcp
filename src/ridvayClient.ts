@@ -69,6 +69,8 @@ export interface DesignPage {
 
 export interface DesignBackground {
   type?: string;
+  /** A resolved image BACKGROUND stores its rendered URL in `url` (elements use `src`). */
+  url?: string;
   src?: string;
   prompt?: string;
   [key: string]: unknown;
@@ -282,7 +284,10 @@ export function countPendingImages(ir: DesignIr | undefined): number {
   let pending = 0;
   for (const page of ir.pages ?? []) {
     const bg = page.background;
-    if (bg && bg.type === "image" && bg.prompt && !bg.src) pending++;
+    // A background resolves its rendered image into `url` (the API's DesignBackground field);
+    // elements use `src`. Checking only `src` treated every resolved background as forever-pending,
+    // so check_poster looped "1 image still rendering" indefinitely. Resolved if EITHER is set.
+    if (bg && bg.type === "image" && bg.prompt && !bg.url && !bg.src) pending++;
     for (const el of page.elements ?? []) {
       if (el.type === "image" && el.prompt && !el.src && !el.canonicalKey && !el.vectorSvg) {
         pending++;

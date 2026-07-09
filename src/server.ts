@@ -14,7 +14,7 @@ import {
 } from "./tools.js";
 
 export const SERVER_NAME = "ridvay";
-export const SERVER_VERSION = "0.2.1";
+export const SERVER_VERSION = "0.2.2";
 
 const AGENT_MODEL_SCHEMA = z
   .string()

@@ -230,6 +230,22 @@ describe("countPendingImages", () => {
     expect(countPendingImages(ir)).toBe(3);
   });
 
+  it("treats a background resolved via `url` (not `src`) as done — the re-trigger-loop regression", () => {
+    // The API stores a resolved background image in `url` (elements use `src`). Counting only `src`
+    // made every resolved background read as forever-pending → check_poster looped indefinitely.
+    const ir = {
+      pages: [
+        { background: { type: "image", prompt: "a beach", url: "https://cdn/bg.jpg" }, elements: [] },
+      ],
+    };
+    expect(countPendingImages(ir)).toBe(0);
+  });
+
+  it("still counts a background with neither url nor src as pending", () => {
+    const ir = { pages: [{ background: { type: "image", prompt: "a beach" }, elements: [] }] };
+    expect(countPendingImages(ir)).toBe(1);
+  });
+
   it("returns 0 for missing or empty IR", () => {
     expect(countPendingImages(undefined)).toBe(0);
     expect(countPendingImages({})).toBe(0);
