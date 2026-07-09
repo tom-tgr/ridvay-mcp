@@ -6,6 +6,7 @@ import {
   countPendingImages,
   DesignIr,
   GenerateDesignResponse,
+  RidvayApiError,
   RidvayClient,
 } from "./ridvayClient.js";
 import { editUrl, viewUrl } from "./links.js";
@@ -13,6 +14,10 @@ import { editUrl, viewUrl } from "./links.js";
 export interface ToolContext {
   client: RidvayClient;
   webUrl?: string;
+  /** Injectable sleep so tests don't wait; defaults to real setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
+  /** How long export_poster/export_video wait for the async job before handing back a job id. */
+  exportPollBudgetMs?: number;
 }
 
 export interface GeneratePosterArgs {
@@ -201,25 +206,85 @@ export interface ExportPosterArgs {
   page?: number;
 }
 
-export async function exportPoster(ctx: ToolContext, args: ExportPosterArgs): Promise<string> {
-  const res = await ctx.client.renderImage(args.design_id, {
-    format: args.format,
-    scale: args.scale,
-    quality: args.quality,
-    pageIndex: args.page,
-  });
-  if (!res.imageUrl) {
-    throw new Error(
-      `Ridvay could not export the design: ${res.error ?? "no image URL returned"}. ` +
-        "If images are still rendering, run check_poster first.",
-    );
+const DEFAULT_SLEEP = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const EXPORT_POLL_INTERVAL_MS = 3_000;
+
+/**
+ * Exports run as ASYNC server-side jobs (enqueue → poll): a render doesn't fit an MCP request
+ * timeout, and a job survives transient renderer blips via server-side retries. We poll briefly so
+ * fast renders still feel synchronous; slow ones hand back a job id for check_export. When the API
+ * predates export jobs (self-hosted, older), the enqueue 404s and we fall back to the sync endpoint.
+ */
+async function runExportJob(
+  ctx: ToolContext,
+  designId: string,
+  params: Parameters<RidvayClient["createExportJob"]>[1],
+  budgetMs: number,
+): Promise<{ url?: string; jobId?: string; error?: string }> {
+  const sleep = ctx.sleep ?? DEFAULT_SLEEP;
+  let job = await ctx.client.createExportJob(designId, params);
+  const jobId = job.jobId;
+  if (!jobId) return { error: job.error ?? "the export job could not be created" };
+
+  const deadline = Date.now() + budgetMs;
+  while (Date.now() < deadline) {
+    await sleep(EXPORT_POLL_INTERVAL_MS);
+    job = await ctx.client.getExportJob(jobId);
+    if (job.status === "done" && job.url) return { url: job.url, jobId };
+    if (job.status === "failed") return { error: job.error ?? "the export failed", jobId };
   }
+  return { jobId }; // still rendering — caller hands back the job id
+}
+
+function isMissingEndpoint(err: unknown): boolean {
+  return err instanceof RidvayApiError && err.status === 404;
+}
+
+export async function exportPoster(ctx: ToolContext, args: ExportPosterArgs): Promise<string> {
   const fmt = (args.format ?? "png").toUpperCase();
   const scale = args.scale ?? 2;
-  return [
+  const doneLines = (url: string) => [
     `Exported "${args.design_id}" as ${fmt} (${scale}× the design's native size):`,
-    res.imageUrl,
+    url,
     "The image is at the design's own pixel dimensions × scale — download it directly.",
+  ];
+
+  let outcome: { url?: string; jobId?: string; error?: string };
+  try {
+    outcome = await runExportJob(
+      ctx,
+      args.design_id,
+      { kind: "image", format: args.format, scale: args.scale, quality: args.quality, pageIndex: args.page },
+      ctx.exportPollBudgetMs ?? 45_000,
+    );
+  } catch (err) {
+    if (!isMissingEndpoint(err)) throw err;
+    // Older API without export jobs — single synchronous attempt.
+    const res = await ctx.client.renderImage(args.design_id, {
+      format: args.format,
+      scale: args.scale,
+      quality: args.quality,
+      pageIndex: args.page,
+    });
+    if (!res.imageUrl) {
+      throw new Error(
+        `Ridvay could not export the design: ${res.error ?? "no image URL returned"}. ` +
+          "If images are still rendering, run check_poster first.",
+      );
+    }
+    return doneLines(res.imageUrl).join("\n");
+  }
+
+  if (outcome.url) return doneLines(outcome.url).join("\n");
+  if (outcome.error) {
+    throw new Error(
+      `Ridvay could not export the design: ${outcome.error}` +
+        (outcome.jobId ? ` (job ${outcome.jobId})` : ""),
+    );
+  }
+  return [
+    `Export started for "${args.design_id}" (${fmt} at ${scale}×) — job ID: ${outcome.jobId}`,
+    "It's still rendering server-side. Call check_export with this job ID in ~10–15 seconds to get the download URL.",
   ].join("\n");
 }
 
@@ -250,19 +315,68 @@ export interface ExportVideoArgs {
 }
 
 export async function exportVideo(ctx: ToolContext, args: ExportVideoArgs): Promise<string> {
-  // render-video takes raw IR (not an id), so fetch the saved design first.
-  const body = await ctx.client.getDesign(args.design_id);
-  const ir = extractIr(body);
-  if (!ir) throw new Error(`Could not load design "${args.design_id}" to render a video.`);
+  let outcome: { url?: string; jobId?: string; error?: string };
+  try {
+    // Video renders take minutes — poll only briefly, then hand back the job id.
+    outcome = await runExportJob(
+      ctx,
+      args.design_id,
+      { kind: "video", fps: args.fps, audioUrl: args.audio_url },
+      ctx.exportPollBudgetMs ?? 20_000,
+    );
+  } catch (err) {
+    if (!isMissingEndpoint(err)) throw err;
+    // Older API without export jobs: single synchronous render (render-video takes raw IR).
+    const body = await ctx.client.getDesign(args.design_id);
+    const ir = extractIr(body);
+    if (!ir) throw new Error(`Could not load design "${args.design_id}" to render a video.`);
+    const res = await ctx.client.renderVideo(ir, { fps: args.fps, audioUrl: args.audio_url });
+    if (!res.videoUrl) {
+      throw new Error(
+        `Ridvay could not render the video: ${res.error ?? "no video URL returned"}. ` +
+          "The design needs motion first — run animate_poster (or include motion fields in the design).",
+      );
+    }
+    return [`Rendered "${args.design_id}" to an MP4 video:`, res.videoUrl].join("\n");
+  }
 
-  const res = await ctx.client.renderVideo(ir, { fps: args.fps, audioUrl: args.audio_url });
-  if (!res.videoUrl) {
+  if (outcome.url) return [`Rendered "${args.design_id}" to an MP4 video:`, outcome.url].join("\n");
+  if (outcome.error) {
     throw new Error(
-      `Ridvay could not render the video: ${res.error ?? "no video URL returned"}. ` +
-        "The design needs motion first — run animate_poster (or include motion fields in the design).",
+      `Ridvay could not render the video: ${outcome.error}` +
+        (outcome.jobId ? ` (job ${outcome.jobId})` : "") +
+        ". If the design has no motion yet, run animate_poster first.",
     );
   }
-  return [`Rendered "${args.design_id}" to an MP4 video:`, res.videoUrl].join("\n");
+  return [
+    `Video render started for "${args.design_id}" — job ID: ${outcome.jobId}`,
+    "Video renders take a few minutes. Call check_export with this job ID in ~60 seconds for the MP4 URL.",
+  ].join("\n");
+}
+
+export interface CheckExportArgs {
+  job_id: string;
+}
+
+export async function checkExport(ctx: ToolContext, args: CheckExportArgs): Promise<string> {
+  const job = await ctx.client.getExportJob(args.job_id);
+  const kind = job.kind === "video" ? "video" : "image";
+  switch (job.status) {
+    case "done":
+      return [
+        `Export finished ✅ — the ${kind} is ready:`,
+        job.url ?? "(no URL returned)",
+        "Download it directly.",
+      ].join("\n");
+    case "failed":
+      throw new Error(
+        `The export failed: ${job.error ?? "unknown error"}. Re-run export_${kind === "video" ? "video" : "poster"} to try again.`,
+      );
+    case "running":
+      return `Still rendering (job ${args.job_id}, ${kind}). Check again in ~${kind === "video" ? 60 : 10} seconds.`;
+    default:
+      return `Export job ${args.job_id} is ${job.status ?? "queued"} — check again in ~10 seconds.`;
+  }
 }
 
 function extractIr(body: Record<string, unknown>): DesignIr | undefined {

@@ -197,6 +197,39 @@ describe("RidvayClient", () => {
     expect((init.headers as Record<string, string>)["X-Ridvay-Client"]).toBe("cursor/1.3.0");
   });
 
+  it("POSTs an export job with kind + knobs and encodes the design id", async () => {
+    const fetchFn = mockFetch(202, { jobId: "j1", status: "queued" });
+    const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });
+
+    const res = await client.createExportJob("d 1", { kind: "image", format: "jpeg", scale: 3, pageIndex: 1 });
+
+    expect(res.jobId).toBe("j1");
+    const { url, init } = lastCall(fetchFn);
+    expect(url).toBe("https://a.com/v1/Designs/d%201/export-jobs");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      kind: "image",
+      format: "jpeg",
+      scale: 3,
+      quality: undefined,
+      pageIndex: 1,
+      fps: undefined,
+      audioUrl: undefined,
+    });
+  });
+
+  it("GETs export job status by job id", async () => {
+    const fetchFn = mockFetch(200, { jobId: "j1", status: "done", url: "https://cdn/x.png" });
+    const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });
+
+    const res = await client.getExportJob("j1");
+
+    expect(res.status).toBe("done");
+    const { url, init } = lastCall(fetchFn);
+    expect(url).toBe("https://a.com/v1/Designs/export-jobs/j1");
+    expect(init.method).toBe("GET");
+  });
+
   it("GETs designs without a request body", async () => {
     const fetchFn = mockFetch(200, { id: "d1" });
     const client = new RidvayClient({ baseUrl: "https://a.com", apiKey: "k", fetchFn });

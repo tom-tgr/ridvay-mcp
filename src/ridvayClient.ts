@@ -86,6 +86,16 @@ export interface DesignElement {
   [key: string]: unknown;
 }
 
+/** Lifecycle snapshot of an async export job (enqueue 202 and status GET share this shape). */
+export interface ExportJobStatus {
+  jobId?: string;
+  designId?: string;
+  kind?: string;
+  status?: string; // queued | running | done | failed
+  url?: string;
+  error?: string;
+}
+
 export class RidvayApiError extends Error {
   constructor(
     message: string,
@@ -202,6 +212,45 @@ export class RidvayClient {
         quality: params.quality,
         pageIndex: params.pageIndex,
       },
+    );
+  }
+
+  /**
+   * Enqueues an async export job (image or video render) — returns immediately with a job id.
+   * The render happens server-side; poll getExportJob until done/failed.
+   */
+  async createExportJob(
+    designId: string,
+    params: {
+      kind: "image" | "video";
+      format?: "png" | "jpeg";
+      scale?: number;
+      quality?: number;
+      pageIndex?: number;
+      fps?: number;
+      audioUrl?: string;
+    },
+  ): Promise<ExportJobStatus> {
+    return this.request<ExportJobStatus>(
+      "POST",
+      `/v1/Designs/${encodeURIComponent(designId)}/export-jobs`,
+      {
+        kind: params.kind,
+        format: params.format,
+        scale: params.scale,
+        quality: params.quality,
+        pageIndex: params.pageIndex,
+        fps: params.fps,
+        audioUrl: params.audioUrl,
+      },
+    );
+  }
+
+  /** Polls an async export job: status queued|running|done|failed (+ url when done). */
+  async getExportJob(jobId: string): Promise<ExportJobStatus> {
+    return this.request<ExportJobStatus>(
+      "GET",
+      `/v1/Designs/export-jobs/${encodeURIComponent(jobId)}`,
     );
   }
 

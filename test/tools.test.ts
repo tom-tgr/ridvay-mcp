@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   animatePoster,
+  checkExport,
   checkPoster,
   createPoster,
   exportPoster,
@@ -10,6 +11,7 @@ import {
   ToolContext,
 } from "../src/tools.js";
 import { DESIGN_GUIDE } from "../src/guide.js";
+import { RidvayApiError } from "../src/ridvayClient.js";
 import type { RidvayClient } from "../src/ridvayClient.js";
 
 function makeCtx(overrides: Partial<Record<keyof RidvayClient, unknown>>): ToolContext {
@@ -23,9 +25,12 @@ function makeCtx(overrides: Partial<Record<keyof RidvayClient, unknown>>): ToolC
     renderImage: vi.fn(async () => ({ imageUrl: "https://cdn/out.png" })),
     animateDesign: vi.fn(),
     renderVideo: vi.fn(async () => ({ videoUrl: "https://cdn/out.mp4" })),
+    createExportJob: vi.fn(async () => ({ jobId: "job1", status: "queued" })),
+    getExportJob: vi.fn(async () => ({ jobId: "job1", status: "done", url: "https://cdn/out.png" })),
     ...overrides,
   } as unknown as RidvayClient;
-  return { client };
+  // Instant sleep + tiny poll budget: async-export tests never wait on real timers.
+  return { client, sleep: async () => {}, exportPollBudgetMs: 50 };
 }
 
 const IR_WITH_PENDING = {
@@ -346,13 +351,15 @@ describe("checkPoster", () => {
 });
 
 describe("exportPoster", () => {
-  it("renders the design and returns the image URL", async () => {
-    const renderImage = vi.fn(async () => ({ imageUrl: "https://cdn/poster.png" }));
-    const ctx = makeCtx({ renderImage });
+  it("enqueues an async image job and returns the URL once the poll sees it done", async () => {
+    const createExportJob = vi.fn(async () => ({ jobId: "job1", status: "queued" }));
+    const getExportJob = vi.fn(async () => ({ jobId: "job1", status: "done", url: "https://cdn/poster.png" }));
+    const ctx = makeCtx({ createExportJob, getExportJob });
 
     const text = await exportPoster(ctx, { design_id: "d1", format: "png", scale: 2 });
 
-    expect(renderImage).toHaveBeenCalledWith("d1", {
+    expect(createExportJob).toHaveBeenCalledWith("d1", {
+      kind: "image",
       format: "png",
       scale: 2,
       quality: undefined,
@@ -362,12 +369,77 @@ describe("exportPoster", () => {
     expect(text).toContain("PNG");
   });
 
-  it("passes page through as pageIndex and throws on render failure", async () => {
-    const renderImage = vi.fn(async () => ({ error: "render_failed" }));
-    const ctx = makeCtx({ renderImage });
-
+  it("surfaces a failed job's error", async () => {
+    const ctx = makeCtx({
+      getExportJob: vi.fn(async () => ({ jobId: "job1", status: "failed", error: "render failed after retries" })),
+    });
     await expect(exportPoster(ctx, { design_id: "d1", page: 1 })).rejects.toThrow(/could not export/i);
-    expect(renderImage).toHaveBeenCalledWith("d1", expect.objectContaining({ pageIndex: 1 }));
+  });
+
+  it("hands back the job id + check_export when the poll budget expires", async () => {
+    const ctx = makeCtx({
+      getExportJob: vi.fn(async () => ({ jobId: "job1", status: "running" })),
+    });
+    const text = await exportPoster(ctx, { design_id: "d1" });
+    expect(text).toContain("job ID: job1");
+    expect(text).toContain("check_export");
+  });
+
+  it("falls back to the synchronous render when the API predates export jobs (404)", async () => {
+    const renderImage = vi.fn(async () => ({ imageUrl: "https://cdn/poster.png" }));
+    const ctx = makeCtx({
+      createExportJob: vi.fn(async () => {
+        throw new RidvayApiError("not found", 404);
+      }),
+      renderImage,
+    });
+
+    const text = await exportPoster(ctx, { design_id: "d1", format: "png", scale: 2, page: 1 });
+
+    expect(renderImage).toHaveBeenCalledWith("d1", {
+      format: "png",
+      scale: 2,
+      quality: undefined,
+      pageIndex: 1,
+    });
+    expect(text).toContain("https://cdn/poster.png");
+  });
+
+  it("sync fallback still throws a helpful error on render failure", async () => {
+    const ctx = makeCtx({
+      createExportJob: vi.fn(async () => {
+        throw new RidvayApiError("not found", 404);
+      }),
+      renderImage: vi.fn(async () => ({ error: "render_failed" })),
+    });
+    await expect(exportPoster(ctx, { design_id: "d1" })).rejects.toThrow(/could not export/i);
+  });
+});
+
+describe("checkExport", () => {
+  it("returns the download URL when the job is done", async () => {
+    const ctx = makeCtx({
+      getExportJob: vi.fn(async () => ({ jobId: "job1", kind: "image", status: "done", url: "https://cdn/x.png" })),
+    });
+    const text = await checkExport(ctx, { job_id: "job1" });
+    expect(text).toContain("https://cdn/x.png");
+    expect(text).toContain("✅");
+  });
+
+  it("reports a running job with a wait hint", async () => {
+    const ctx = makeCtx({
+      getExportJob: vi.fn(async () => ({ jobId: "job1", kind: "video", status: "running" })),
+    });
+    const text = await checkExport(ctx, { job_id: "job1" });
+    expect(text).toContain("Still rendering");
+    expect(text).toContain("60 seconds");
+  });
+
+  it("throws with the failure reason", async () => {
+    const ctx = makeCtx({
+      getExportJob: vi.fn(async () => ({ jobId: "job1", status: "failed", error: "worker interrupted" })),
+    });
+    await expect(checkExport(ctx, { job_id: "job1" })).rejects.toThrow(/worker interrupted/);
   });
 });
 
@@ -399,10 +471,44 @@ describe("animatePoster", () => {
 });
 
 describe("exportVideo", () => {
-  it("fetches the design IR then renders a video", async () => {
+  it("enqueues an async video job and returns the MP4 URL when done in budget", async () => {
+    const createExportJob = vi.fn(async () => ({ jobId: "vj1", status: "queued" }));
+    const getExportJob = vi.fn(async () => ({ jobId: "vj1", status: "done", url: "https://cdn/clip.mp4" }));
+    const ctx = makeCtx({ createExportJob, getExportJob });
+
+    const text = await exportVideo(ctx, { design_id: "d1", fps: 30 });
+
+    expect(createExportJob).toHaveBeenCalledWith("d1", { kind: "video", fps: 30, audioUrl: undefined });
+    expect(text).toContain("https://cdn/clip.mp4");
+  });
+
+  it("hands back a job id for the typical minutes-long render", async () => {
+    const ctx = makeCtx({
+      createExportJob: vi.fn(async () => ({ jobId: "vj1", status: "queued" })),
+      getExportJob: vi.fn(async () => ({ jobId: "vj1", status: "running" })),
+    });
+    const text = await exportVideo(ctx, { design_id: "d1" });
+    expect(text).toContain("job ID: vj1");
+    expect(text).toContain("check_export");
+  });
+
+  it("throws a motion hint when the job fails", async () => {
+    const ctx = makeCtx({
+      getExportJob: vi.fn(async () => ({ jobId: "vj1", status: "failed", error: "no motion" })),
+    });
+    await expect(exportVideo(ctx, { design_id: "d1" })).rejects.toThrow(/animate_poster/);
+  });
+
+  it("falls back to the synchronous render-video when the API predates export jobs (404)", async () => {
     const getDesign = vi.fn(async () => ({ ir: { title: "Sale", pages: [{ elements: [] }] } }));
     const renderVideo = vi.fn(async () => ({ videoUrl: "https://cdn/clip.mp4" }));
-    const ctx = makeCtx({ getDesign, renderVideo });
+    const ctx = makeCtx({
+      createExportJob: vi.fn(async () => {
+        throw new RidvayApiError("not found", 404);
+      }),
+      getDesign,
+      renderVideo,
+    });
 
     const text = await exportVideo(ctx, { design_id: "d1", fps: 30 });
 
@@ -412,13 +518,5 @@ describe("exportVideo", () => {
       { fps: 30, audioUrl: undefined },
     );
     expect(text).toContain("https://cdn/clip.mp4");
-  });
-
-  it("throws a motion hint when the video render fails", async () => {
-    const ctx = makeCtx({
-      getDesign: vi.fn(async () => ({ ir: { pages: [] } })),
-      renderVideo: vi.fn(async () => ({ error: "no motion" })),
-    });
-    await expect(exportVideo(ctx, { design_id: "d1" })).rejects.toThrow(/animate_poster/);
   });
 });
